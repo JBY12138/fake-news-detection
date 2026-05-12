@@ -8,7 +8,11 @@
 import re
 import argparse
 import warnings
-warnings.filterwarnings('ignore')
+warnings.filterwarnings('ignore')  # 忽略警告
+
+# 禁用 transformers 的特定警告
+import logging
+logging.getLogger("transformers").setLevel(logging.ERROR)
 
 def load_models():
     """加载模型文件"""
@@ -37,11 +41,21 @@ def load_models():
         return False
     
     try:
-        # 加载BERT模型
+        # 加载BERT模型（静默加载，不输出警告）
+        import sys
+        from io import StringIO
+        
+        # 临时重定向stdout，屏蔽BERT加载时的输出
+        old_stdout = sys.stdout
+        sys.stdout = StringIO()
+        
         model_path = r'C:\Users\86187\bert-base-chinese'
         tokenizer = BertTokenizer.from_pretrained(model_path, local_files_only=True)
         bert_model = BertModel.from_pretrained(model_path, local_files_only=True)
         bert_model.eval()
+        
+        # 恢复输出
+        sys.stdout = old_stdout
         print("✓ BERT模型加载成功")
     except FileNotFoundError:
         print("警告：未找到本地BERT模型，将使用在线模式（需要网络连接）")
@@ -141,7 +155,6 @@ def main():
     print("检测结果")
     print("=" * 50)
     print(f"判定结果: {result['prediction']}")
-    print(f"置信度: {result['confidence']:.4f} ({result['confidence']*100:.1f}%)")
     print(f"虚假概率: {result['probability_fake']:.4f}")
     print(f"真实概率: {result['probability_real']:.4f}")
     print("=" * 50)
