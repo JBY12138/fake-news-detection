@@ -8,14 +8,39 @@
 import re
 import argparse
 import warnings
-warnings.filterwarnings('ignore')  # 忽略警告
+import os
+import sys
 
-# 禁用 transformers 的特定警告
+# ========== 屏蔽所有警告和日志 ==========
+warnings.filterwarnings('ignore')
+
+# 屏蔽 transformers 和 huggingface 的日志
+os.environ['TRANSFORMERS_VERBOSITY'] = 'error'
+os.environ['HF_HUB_DISABLE_TELEMETRY'] = '1'
+os.environ['TOKENIZERS_PARALLELISM'] = 'false'
+
 import logging
 logging.getLogger("transformers").setLevel(logging.ERROR)
+logging.getLogger("huggingface_hub").setLevel(logging.ERROR)
+
+# 临时屏蔽 stdout 和 stderr
+def suppress_output():
+    """临时屏蔽所有输出"""
+    sys.stdout = open(os.devnull, 'w')
+    sys.stderr = open(os.devnull, 'w')
+
+def restore_output():
+    """恢复输出"""
+    sys.stdout = sys.__stdout__
+    sys.stderr = sys.__stderr__
+
+# ========== 全局变量 ==========
+xgb_model = None
+tokenizer = None
+bert_model = None
 
 def load_models():
-    """加载模型文件"""
+    """加载模型文件（静默模式）"""
     global xgb_model, tokenizer, bert_model
     
     try:
@@ -25,29 +50,23 @@ def load_models():
         import xgboost as xgb
     except ImportError as e:
         print(f"错误：缺少必要的Python库，请运行: pip install joblib torch transformers xgboost")
-        print(f"缺失的库: {e}")
         return False
     
+    # 加载XGBoost模型
     try:
-        # 加载XGBoost模型
         xgb_model = joblib.load('models/fake_news_model.pkl')
         print("✓ XGBoost模型加载成功")
     except FileNotFoundError:
         print("错误：未找到 models/fake_news_model.pkl")
-        print("请先在 Jupyter Notebook 中运行 experiment.ipynb 生成模型文件")
         return False
     except Exception as e:
         print(f"加载XGBoost模型失败: {e}")
         return False
     
+    # 加载BERT模型（完全静默）
     try:
-        # 加载BERT模型（静默加载，不输出警告）
-        import sys
-        from io import StringIO
-        
-        # 临时重定向stdout，屏蔽BERT加载时的输出
-        old_stdout = sys.stdout
-        sys.stdout = StringIO()
+        # 屏蔽输出
+        suppress_output()
         
         model_path = r'C:\Users\86187\bert-base-chinese'
         tokenizer = BertTokenizer.from_pretrained(model_path, local_files_only=True)
@@ -55,19 +74,11 @@ def load_models():
         bert_model.eval()
         
         # 恢复输出
-        sys.stdout = old_stdout
+        restore_output()
         print("✓ BERT模型加载成功")
-    except FileNotFoundError:
-        print("警告：未找到本地BERT模型，将使用在线模式（需要网络连接）")
-        try:
-            tokenizer = BertTokenizer.from_pretrained('bert-base-chinese')
-            bert_model = BertModel.from_pretrained('bert-base-chinese')
-            bert_model.eval()
-            print("✓ BERT模型在线加载成功")
-        except Exception as e:
-            print(f"加载BERT模型失败: {e}")
-            return False
+        
     except Exception as e:
+        restore_output()
         print(f"加载BERT模型失败: {e}")
         return False
     
@@ -113,7 +124,6 @@ def predict(text, category_index=0):
     
     return {
         'prediction': '虚假' if pred == 1 else '真实',
-        'confidence': float(prob[1]),
         'probability_fake': float(prob[1]),
         'probability_real': float(prob[0])
     }
